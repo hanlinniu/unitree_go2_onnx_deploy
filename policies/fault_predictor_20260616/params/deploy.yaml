@@ -1,0 +1,114 @@
+num_observations: 45
+num_actions: 12
+step_dt: 0.02
+sim_dt: 0.005
+decimation: 4
+joint_ids_map:
+- 3
+- 4
+- 5
+- 0
+- 1
+- 2
+- 9
+- 10
+- 11
+- 6
+- 7
+- 8
+default_joint_pos:
+- 0.1
+- 0.8
+- -1.5
+- -0.1
+- 0.8
+- -1.5
+- 0.1
+- 0.8
+- -1.5
+- -0.1
+- 0.8
+- -1.5
+stiffness:
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+- 25.0
+damping:
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+- 0.5
+policy_stiffness:
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+- 40.0
+policy_damping:
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+action_scale: 0.25
+clip_actions: 1.2
+obs_scales:
+  ang_vel: 0.25
+  dof_pos: 1.0
+  dof_vel: 0.05
+commands_scale:
+- 2.0
+- 2.0
+- 0.25
+clip_observations: 100.0
+fault_belief_in_actor: false
+fault_history_len: 10
+joint_names:
+- FL_hip_joint
+- FL_thigh_joint
+- FL_calf_joint
+- FR_hip_joint
+- FR_thigh_joint
+- FR_calf_joint
+- RL_hip_joint
+- RL_thigh_joint
+- RL_calf_joint
+- RR_hip_joint
+- RR_thigh_joint
+- RR_calf_joint
+commands:
+  max_cmd:
+  - 1.0
+  - 1.0
+  - 1.0

@@ -13,4 +13,4 @@ FSM:
     ]
   Velocity:
     # Path relative to this config file, or absolute.
-    policy_dir: ../../../../policies/example
+    policy_dir: ../../../../policies/fault_predictor_20260616
