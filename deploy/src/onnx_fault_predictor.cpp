@@ -1,12 +1,23 @@
 #include "go2_deploy/onnx_fault_predictor.hpp"
 
-#include <algorithm>
+#include "go2_deploy/onnx_io_util.hpp"
+
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 
 namespace go2_deploy {
+
+namespace {
+
+constexpr const char* kFaultOutputFallbacks[] = {
+    "failed_joint_prob",
+    "severity",
+    "locked_joint_prob",
+};
+
+}  // namespace
 
 Ort::SessionOptions OnnxFaultPredictor::make_session_options() {
     Ort::SessionOptions options;
@@ -34,23 +45,19 @@ OnnxFaultPredictor::OnnxFaultPredictor(const std::string& model_path)
     }
     fault_obs_dim_ = static_cast<int>(input_shape[1]);
 
-    auto input_name = session_.GetInputNameAllocated(0, allocator_);
-    input_names_storage_.push_back(input_name.get());
-    input_names_.push_back(input_names_storage_.back().c_str());
+    input_names_storage_.push_back(
+        resolve_onnx_input_name(session_, allocator_, 0, "fault_obs_history"));
+    bind_onnx_name_ptrs(input_names_storage_, input_names_);
 
     for (size_t i = 0; i < 3; ++i) {
-        auto output_name = session_.GetOutputNameAllocated(i, allocator_);
-        const char* raw_name = output_name.get();
-        output_names_storage_.push_back(raw_name != nullptr ? raw_name : "");
-        output_names_.push_back(output_names_storage_.back().c_str());
+        output_names_storage_.push_back(
+            resolve_onnx_output_name(session_, allocator_, i, kFaultOutputFallbacks[i]));
     }
+    bind_onnx_name_ptrs(output_names_storage_, output_names_);
 
-    if (output_names_storage_.size() != 3) {
-        throw std::runtime_error("Failed to read fault predictor output names");
-    }
-    std::cout << "Fault predictor outputs:";
+    std::cout << "Fault predictor ONNX IO: input=" << input_names_storage_[0] << " outputs";
     for (const auto& name : output_names_storage_) {
-        std::cout << " " << (name.empty() ? "<unnamed>" : name);
+        std::cout << " " << name;
     }
     std::cout << std::endl;
 
@@ -80,8 +87,8 @@ FaultDiagnosis OnnxFaultPredictor::infer(const std::vector<float>& fault_obs_his
         input_names_.data(),
         &input_tensor,
         1,
-        nullptr,
-        0);
+        output_names_.data(),
+        output_names_.size());
 
     if (outputs.size() != 3) {
         throw std::runtime_error("Expected three fault predictor outputs from ONNX Runtime");

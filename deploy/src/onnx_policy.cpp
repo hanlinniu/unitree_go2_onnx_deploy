@@ -1,5 +1,8 @@
 #include "go2_deploy/onnx_policy.hpp"
 
+#include "go2_deploy/onnx_io_util.hpp"
+
+#include <iostream>
 #include <stdexcept>
 
 namespace go2_deploy {
@@ -30,16 +33,20 @@ OnnxPolicy::OnnxPolicy(const std::string& model_path)
         input_shape_[0] = 1;
     }
 
-    auto input_name = session_.GetInputNameAllocated(0, allocator_);
-    input_names_storage_.push_back(input_name.get());
-    input_names_.push_back(input_names_storage_.back().c_str());
+    input_names_storage_.push_back(
+        resolve_onnx_input_name(session_, allocator_, 0, "observations"));
+    bind_onnx_name_ptrs(input_names_storage_, input_names_);
 
     const size_t num_outputs = session_.GetOutputCount();
-    for (size_t i = 0; i < num_outputs; ++i) {
-        auto output_name = session_.GetOutputNameAllocated(i, allocator_);
-        output_names_storage_.push_back(output_name.get());
-        output_names_.push_back(output_names_storage_.back().c_str());
+    if (num_outputs != 1) {
+        throw std::runtime_error("Expected exactly one ONNX output");
     }
+    output_names_storage_.push_back(
+        resolve_onnx_output_name(session_, allocator_, 0, "actions"));
+    bind_onnx_name_ptrs(output_names_storage_, output_names_);
+
+    std::cout << "Policy ONNX IO: input=" << input_names_storage_[0]
+              << " output=" << output_names_storage_[0] << std::endl;
 
     Ort::TypeInfo output_type = session_.GetOutputTypeInfo(0);
     const auto output_shape = output_type.GetTensorTypeAndShapeInfo().GetShape();
@@ -69,8 +76,12 @@ std::vector<float> OnnxPolicy::infer(const std::vector<float>& observations) {
         input_names_.data(),
         &input_tensor,
         1,
-        nullptr,
-        0);
+        output_names_.data(),
+        output_names_.size());
+
+    if (outputs.empty()) {
+        throw std::runtime_error("Policy ONNX Runtime returned no outputs");
+    }
 
     float* out_data = outputs[0].GetTensorMutableData<float>();
     auto out_shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
