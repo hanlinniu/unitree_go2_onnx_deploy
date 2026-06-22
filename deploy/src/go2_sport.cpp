@@ -17,9 +17,10 @@ bool Go2Sport::disable_sport_mode() {
     if (!initialized_) {
         return false;
     }
-    const int32_t ret = robot_state_.ServiceSwitch("sport_mode", 0);
+    int32_t status = 0;
+    const int32_t ret = robot_state_.ServiceSwitch("sport_mode", 0, status);
     if (ret != 0) {
-        std::cerr << "ServiceSwitch(sport_mode, 0) failed: " << ret << std::endl;
+        std::cerr << "ServiceSwitch(sport_mode, 0) failed: " << ret << " status=" << status << std::endl;
         return false;
     }
     std::cout << "Disabled sport_mode (low-level control enabled)" << std::endl;
@@ -30,9 +31,10 @@ bool Go2Sport::enable_sport_mode() {
     if (!initialized_) {
         return false;
     }
-    const int32_t ret = robot_state_.ServiceSwitch("sport_mode", 1);
+    int32_t status = 0;
+    const int32_t ret = robot_state_.ServiceSwitch("sport_mode", 1, status);
     if (ret != 0) {
-        std::cerr << "ServiceSwitch(sport_mode, 1) failed: " << ret << std::endl;
+        std::cerr << "ServiceSwitch(sport_mode, 1) failed: " << ret << " status=" << status << std::endl;
         return false;
     }
     std::cout << "Enabled sport_mode" << std::endl;
