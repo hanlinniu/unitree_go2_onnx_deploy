@@ -69,8 +69,8 @@ std::vector<float> OnnxPolicy::infer(const std::vector<float>& observations) {
         input_names_.data(),
         &input_tensor,
         1,
-        output_names_.data(),
-        output_names_.size());
+        nullptr,
+        0);
 
     float* out_data = outputs[0].GetTensorMutableData<float>();
     auto out_shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();

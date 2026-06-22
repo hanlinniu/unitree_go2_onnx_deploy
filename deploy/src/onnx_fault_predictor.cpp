@@ -40,9 +40,19 @@ OnnxFaultPredictor::OnnxFaultPredictor(const std::string& model_path)
 
     for (size_t i = 0; i < 3; ++i) {
         auto output_name = session_.GetOutputNameAllocated(i, allocator_);
-        output_names_storage_.push_back(output_name.get());
+        const char* raw_name = output_name.get();
+        output_names_storage_.push_back(raw_name != nullptr ? raw_name : "");
         output_names_.push_back(output_names_storage_.back().c_str());
     }
+
+    if (output_names_storage_.size() != 3) {
+        throw std::runtime_error("Failed to read fault predictor output names");
+    }
+    std::cout << "Fault predictor outputs:";
+    for (const auto& name : output_names_storage_) {
+        std::cout << " " << (name.empty() ? "<unnamed>" : name);
+    }
+    std::cout << std::endl;
 
     Ort::TypeInfo failed_type = session_.GetOutputTypeInfo(0);
     const auto failed_shape = failed_type.GetTensorTypeAndShapeInfo().GetShape();
@@ -70,8 +80,12 @@ FaultDiagnosis OnnxFaultPredictor::infer(const std::vector<float>& fault_obs_his
         input_names_.data(),
         &input_tensor,
         1,
-        output_names_.data(),
-        output_names_.size());
+        nullptr,
+        0);
+
+    if (outputs.size() != 3) {
+        throw std::runtime_error("Expected three fault predictor outputs from ONNX Runtime");
+    }
 
     auto copy_output = [](Ort::Value& value) {
         float* data = value.GetTensorMutableData<float>();
