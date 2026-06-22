@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export a traced TorchScript GO2 policy (.pt) to ONNX + deploy.yaml for C++ deploy."""
+"""Export a Kaixin / legged_gym TorchScript policy (.pt) to ONNX + deploy.yaml."""
 
 from __future__ import annotations
 
@@ -8,21 +8,23 @@ import json
 from pathlib import Path
 
 import torch
+import torch.nn as nn
 import yaml
 
 from export_onnx_from_checkpoint import (
     DEFAULT_JOINT_IDS_MAP,
     DEFAULT_JOINT_NAMES,
+    ActorOnnxWrapper,
     export_onnx,
 )
 
 
-def default_deploy_yaml(
-    policy_kp: float,
-    policy_kd: float,
-    clip_actions: float,
-) -> dict:
-    """Deploy params aligned with Kaixin / unitree_legged_gym GO2 defaults."""
+NUM_OBS = 45
+NUM_ACTIONS = 12
+
+
+def default_deploy_yaml(policy_kp: float, policy_kd: float, clip_actions: float) -> dict:
+    """GO2 defaults aligned with Kaixin onboard + unitree_legged_gym base config."""
     default_joint_pos = [
         0.1, 0.8, -1.5,   # FL
         -0.1, 0.8, -1.5,  # FR
@@ -30,8 +32,8 @@ def default_deploy_yaml(
         -0.1, 0.8, -1.5,  # RR
     ]
     return {
-        "num_observations": 45,
-        "num_actions": 12,
+        "num_observations": NUM_OBS,
+        "num_actions": NUM_ACTIONS,
         "step_dt": 0.02,
         "sim_dt": 0.005,
         "decimation": 4,
@@ -50,52 +52,43 @@ def default_deploy_yaml(
         "fault_history_len": 10,
         "joint_names": DEFAULT_JOINT_NAMES,
         "commands": {"max_cmd": [1.0, 1.0, 1.0]},
-        "source_torchscript": True,
     }
 
 
-def load_actor_from_torchscript(path: Path, device: str) -> torch.nn.Module:
-    module = torch.jit.load(str(path), map_location=device)
-    module.eval()
+class TorchScriptActorWrapper(nn.Module):
+    """Export actor-only inference from a TorchScript bundle."""
 
-    if hasattr(module, "actor"):
-        actor = module.actor
-        actor.eval()
-        return actor
+    def __init__(self, module: torch.jit.ScriptModule):
+        super().__init__()
+        self.module = module
 
-    if hasattr(module, "act_inference"):
-        class ActInferenceWrapper(torch.nn.Module):
-            def __init__(self, wrapped):
-                super().__init__()
-                self.wrapped = wrapped
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        if hasattr(self.module, "act_inference"):
+            return self.module.act_inference(observations)
+        return self.module(observations)
 
-            def forward(self, observations: torch.Tensor) -> torch.Tensor:
-                return self.wrapped.act_inference(observations)
 
-        return ActInferenceWrapper(module).eval()
-
-    raise RuntimeError(
-        f"{path} has no .actor or .act_inference. "
-        "Re-export from unitree_legged_gym or pass a raw model_*.pt checkpoint."
+def resolve_actor_module(ts: torch.jit.ScriptModule) -> nn.Module:
+    """Prefer standalone actor (stateless). Fall back to act_inference wrapper."""
+    if hasattr(ts, "actor"):
+        actor = ts.actor
+        dummy = torch.zeros(1, NUM_OBS)
+        with torch.no_grad():
+            out = actor(dummy)
+        if out.shape[-1] == NUM_ACTIONS:
+            print("Using TorchScript submodule: actor (proprio-only, recommended for ONNX)")
+            return actor
+    print(
+        "Warning: exporting via act_inference (may include world-model side effects). "
+        "Prefer exporting from raw model_*.pt checkpoint when possible."
     )
+    return TorchScriptActorWrapper(ts)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--torchscript",
-        type=Path,
-        required=True,
-        help="Path to traced policy_*.pt (Kaixin traced_fault_tolerant export).",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=Path,
-        required=True,
-        help="Policy bundle dir (creates exported/policy.onnx and params/deploy.yaml).",
-    )
-    parser.add_argument("--device", default="cpu")
-    parser.add_argument("--num_obs", type=int, default=45)
+    parser.add_argument("--torchscript", type=Path, required=True, help="Path to policy_*.pt")
+    parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--policy_kp", type=float, default=20.0)
     parser.add_argument("--policy_kd", type=float, default=0.5)
     parser.add_argument("--clip_actions", type=float, default=1.2)
@@ -104,16 +97,18 @@ def main() -> None:
 
     ts_path = args.torchscript.expanduser()
     output_dir = args.output_dir.expanduser()
-    actor = load_actor_from_torchscript(ts_path, args.device)
-
-    onnx_path = output_dir / "exported" / "policy.onnx"
-    export_onnx(actor, onnx_path, args.num_obs, args.opset)
-
-    deploy = default_deploy_yaml(args.policy_kp, args.policy_kd, args.clip_actions)
-    deploy["source_file"] = str(ts_path)
-
+    exported_dir = output_dir / "exported"
     params_dir = output_dir / "params"
     params_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = torch.jit.load(str(ts_path), map_location="cpu")
+    ts.eval()
+
+    actor = resolve_actor_module(ts)
+    onnx_path = exported_dir / "policy.onnx"
+    export_onnx(actor, onnx_path, NUM_OBS, args.opset)
+
+    deploy = default_deploy_yaml(args.policy_kp, args.policy_kd, args.clip_actions)
     deploy_path = params_dir / "deploy.yaml"
     with deploy_path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(deploy, f, sort_keys=False)
@@ -122,6 +117,8 @@ def main() -> None:
         "torchscript": str(ts_path),
         "onnx": str(onnx_path),
         "deploy_yaml": str(deploy_path),
+        "num_observations": NUM_OBS,
+        "num_actions": NUM_ACTIONS,
     }
     with (output_dir / "export_meta.json").open("w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
