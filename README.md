@@ -32,10 +32,10 @@ cd ~/unitree_go2_onnx_deploy
 # if you haven't already
 pip install onnx
 python3 scripts/export_onnx_from_checkpoint.py \
-  --checkpoint ~/unitree_legged_gym/unitree_rl_gym/logs/unitree_legged_gym/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware/model_30000.pt \
+  --checkpoint ~/unitree_legged_gym/unitree_rl_gym/logs/unitree_legged_gym/20260622_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor_kp25kd0.6-raico/model_30000.pt \
   --unitree_gym_root ~/unitree_legged_gym \
-  --policy_kp 40 \
-  --policy_kd 1
+  --policy_kp 25 \
+  --policy_kd 0.6
 ```
 
 `--output_dir` is optional: it defaults to `policies/<checkpoint_parent_folder>/` (the training log folder name). Override with `--output_dir policies/my_run` if needed.

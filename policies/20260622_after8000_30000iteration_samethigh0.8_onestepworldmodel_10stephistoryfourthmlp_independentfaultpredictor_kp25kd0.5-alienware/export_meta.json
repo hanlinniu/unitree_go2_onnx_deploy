@@ -1,0 +1,11 @@
+{
+  "checkpoint": "/home/hanlin/unitree_legged_gym/unitree_rl_gym/logs/unitree_legged_gym/20260622_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor_kp25kd0.5-alienware/model_30000.pt",
+  "onnx": "policies/20260622_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor_kp25kd0.5-alienware/exported/policy.onnx",
+  "fault_predictor_onnx": "policies/20260622_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor_kp25kd0.5-alienware/exported/fault_predictor.onnx",
+  "deploy_yaml": "policies/20260622_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor_kp25kd0.5-alienware/params/deploy.yaml",
+  "num_observations": 45,
+  "num_actions": 12,
+  "fault_history_len": 10,
+  "fault_observation_dim": 450,
+  "policy_class": "ActorCriticWithFaultWorldModel"
+}
