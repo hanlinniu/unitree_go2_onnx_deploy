@@ -92,7 +92,12 @@ def main() -> None:
     parser.add_argument("--policy_kp", type=float, default=20.0)
     parser.add_argument("--policy_kd", type=float, default=0.5)
     parser.add_argument("--clip_actions", type=float, default=1.2)
-    parser.add_argument("--opset", type=int, default=17)
+    parser.add_argument(
+        "--opset",
+        type=int,
+        default=17,
+        help="ONNX opset (auto-clamped to PyTorch max if unsupported).",
+    )
     args = parser.parse_args()
 
     ts_path = args.torchscript.expanduser()

@@ -150,7 +150,30 @@ def build_deploy_yaml(
     }
 
 
+def max_supported_onnx_opset() -> int:
+    """Highest ONNX opset supported by the installed PyTorch build."""
+    try:
+        import torch.onnx.symbolic_helper as symbolic_helper
+
+        return int(symbolic_helper._export_onnx_opset_version)
+    except (ImportError, AttributeError, TypeError, ValueError):
+        return 11
+
+
+def resolve_onnx_opset(requested: int) -> int:
+    """Clamp requested opset to what this PyTorch build can export."""
+    max_opset = max_supported_onnx_opset()
+    opset = min(requested, max_opset)
+    if opset != requested:
+        print(
+            f"Warning: ONNX opset {requested} unsupported by torch {torch.__version__}; "
+            f"using opset {opset} instead."
+        )
+    return opset
+
+
 def export_onnx(actor: torch.nn.Module, out_path: Path, num_obs: int, opset: int) -> None:
+    opset = resolve_onnx_opset(opset)
     wrapper = ActorOnnxWrapper(actor).cpu().eval()
     dummy = torch.zeros(1, num_obs, dtype=torch.float32)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,7 +231,12 @@ def main() -> None:
         default=1.2,
         help="Action clip before action_scale on hardware (matches Kaixin deploy).",
     )
-    parser.add_argument("--opset", type=int, default=17)
+    parser.add_argument(
+        "--opset",
+        type=int,
+        default=17,
+        help="ONNX opset (auto-clamped to PyTorch max if unsupported).",
+    )
     args = parser.parse_args()
 
     model, env_cfg, train_cfg, policy_cfg = load_actor_critic(
