@@ -27,29 +27,23 @@ Training repo path (default): `~/unitree_legged_gym`
 Export both the walking actor (`policy.onnx`) and fault diagnosis stack (`fault_predictor.onnx`) from a `model_*.pt` checkpoint:
 
 ```bash
+conda activate unitree-rl
 cd ~/unitree_go2_onnx_deploy
-
+# if you haven't already
+pip install onnx
 python3 scripts/export_onnx_from_checkpoint.py \
   --checkpoint ~/unitree_legged_gym/unitree_rl_gym/logs/unitree_legged_gym/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware/model_30000.pt \
-  --output_dir policies/fault_predictor_20260616 \
+  --unitree_gym_root ~/unitree_legged_gym \
   --policy_kp 40 \
   --policy_kd 1
 ```
 
-Or from any other training run:
-
-```bash
-python3 scripts/export_onnx_from_checkpoint.py \
-  --checkpoint ~/unitree_legged_gym/unitree_rl_gym/logs/rough_go2/<your_run>/model_30000.pt \
-  --output_dir policies/my_run \
-  --policy_kp 20 \
-  --policy_kd 0.5
-```
+`--output_dir` is optional: it defaults to `policies/<checkpoint_parent_folder>/` (the training log folder name). Override with `--output_dir policies/my_run` if needed.
 
 This creates:
 
 ```
-policies/my_run/
+policies/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware/
   exported/policy.onnx
   exported/fault_predictor.onnx
   params/deploy.yaml
@@ -62,7 +56,7 @@ Update `deploy/robots/go2/config/config.yaml`:
 
 ```yaml
 Velocity:
-  policy_dir: ../../../../policies/my_run
+  policy_dir: ../../../../policies/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware
 ```
 
 ## 2. Build C++ deploy
@@ -151,6 +145,19 @@ Weakens PD gains on one calf joint after `--healthy_s` seconds. Use `--fault_sth
   --no_fixed_command_joystick_yaw
 ```
 
+While the policy runs (after **Y**), the terminal prints throttled lines matching Kaixin `run_fault_scenarios_independentfaultpredictor.py`:
+
+```
+healthy policy phase: 2.1s until calf failure
+[run_fault_scenarios] scenario=random_fault  phase=HEALTHY  loop=0.00123s
+[world_model] predicted_failed=none/healthy p=0.85 predicted_locked=FL_calf_joint p=0.12 healthy_prob=0.85
+Calf motor failure active: FR_calf_joint (sim_idx=5) PD gain scale alpha=0.1
+[run_fault_scenarios] scenario=random_fault  phase=FAULT  loop=0.00145s  failed_dof=FR_calf_joint  alpha=0.100
+[world_model] predicted_failed=FR_calf_joint p=0.62 strength=0.31 predicted_locked=FR_calf_joint p=0.08 healthy_prob=0.18
+```
+
+Requires `exported/fault_predictor.onnx` in the policy bundle (`Velocity.policy_dir` in `config.yaml`). If missing, you will see `No fault_predictor.onnx found; fault diagnostics disabled.`
+
 ### Calf lock (`random_lock`)
 
 Forces one calf joint to `--lock_angle_deg` after `--healthy_s` seconds of healthy walking.
@@ -236,7 +243,7 @@ Re-export with `--policy_kp` / `--policy_kd` if you change training/deploy gains
 |--|----------------------|-----------|
 | Inference | TorchScript / CUDA | ONNX Runtime C++ |
 | Middleware | ROS2 | unitree_sdk2 DDS |
-| Fault diagnostics | `fault_explanation()` | `fault_predictor.onnx` + throttled `[fault_predictor]` logs |
+| Fault diagnostics | `fault_explanation()` | `fault_predictor.onnx` + throttled `[world_model]` logs |
 | Warm-up | 3 dummy GPU runs | 3 dummy ORT runs on Velocity enter |
 
 To add world-model dynamics prediction later, export `dynamics_head` as a separate ONNX model.

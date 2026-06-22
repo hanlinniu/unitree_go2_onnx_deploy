@@ -9,9 +9,17 @@
 
 namespace go2_deploy {
 
+struct ScenarioStatus {
+    std::string phase;
+    std::string info;
+};
+
 class FaultScenario {
 public:
     explicit FaultScenario(ScenarioConfig config);
+
+    const ScenarioConfig& config() const { return config_; }
+    ScenarioStatus status(const std::vector<std::string>& joint_names) const;
 
     void arm(double now_sec);
     void clear();

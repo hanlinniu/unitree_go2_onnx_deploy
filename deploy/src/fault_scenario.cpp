@@ -5,6 +5,9 @@
 #include <iostream>
 #include <stdexcept>
 
+#include <iomanip>
+#include <sstream>
+
 namespace go2_deploy {
 
 namespace {
@@ -134,6 +137,38 @@ std::string FaultScenario::calf_name_for_sim_idx(int sim_idx) const {
         }
     }
     return "UNKNOWN";
+}
+
+ScenarioStatus FaultScenario::status(const std::vector<std::string>& joint_names) const {
+    ScenarioStatus out;
+    if (config_.type == ScenarioType::Healthy) {
+        out.phase = "HEALTHY";
+        return out;
+    }
+
+    if (config_.type == ScenarioType::RandomLock) {
+        out.phase = lock_active_ ? "LOCKED" : "HEALTHY";
+        if (lock_active_ && locked_sim_idx_.has_value()) {
+            const int sim_idx = *locked_sim_idx_;
+            std::ostringstream info;
+            info << std::fixed << std::setprecision(1)
+                 << "  locked_dof=" << joint_names[static_cast<size_t>(sim_idx)]
+                 << "  target=" << config_.lock_angle_deg << " deg";
+            out.info = info.str();
+        }
+        return out;
+    }
+
+    out.phase = fault_active_ ? "FAULT" : "HEALTHY";
+    if (fault_active_ && failed_sim_idx_.has_value()) {
+        const int sim_idx = *failed_sim_idx_;
+        std::ostringstream info;
+        info << std::fixed << std::setprecision(3)
+             << "  failed_dof=" << joint_names[static_cast<size_t>(sim_idx)]
+             << "  alpha=" << failed_alpha_;
+        out.info = info.str();
+    }
+    return out;
 }
 
 }  // namespace go2_deploy

@@ -1,7 +1,0 @@
-{
-  "torchscript": "/home/unitree/Kaixin-Extreme-Parkour-Onboard/traced_fault_tolerant/policy_20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware.pt",
-  "onnx": "/home/unitree/unitree_go2_onnx_deploy/policies/fault_predictor_20260616/exported/policy.onnx",
-  "deploy_yaml": "/home/unitree/unitree_go2_onnx_deploy/policies/fault_predictor_20260616/params/deploy.yaml",
-  "num_observations": 45,
-  "num_actions": 12
-}

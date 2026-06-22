@@ -77,6 +77,7 @@ private:
     std::vector<float> fixstand_kp_;
     std::vector<float> fixstand_kd_;
     double last_fault_log_sec_{-1.0};
+    double last_scenario_log_sec_{-1.0};
 };
 
 }  // namespace go2_deploy

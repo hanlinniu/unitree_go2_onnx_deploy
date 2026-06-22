@@ -128,7 +128,7 @@ void print_fault_diagnosis(const FaultDiagnosis& diagnosis, const std::vector<st
                   << joint_names[static_cast<size_t>(top_locked_idx)] << " p="
                   << diagnosis.locked_joint_prob[static_cast<size_t>(top_locked_idx)];
 
-    std::cout << "[fault_predictor] predicted_failed=" << failed_desc.str()
+    std::cout << "[world_model] predicted_failed=" << failed_desc.str()
               << " predicted_locked=" << locked_desc.str() << " healthy_prob=" << healthy_prob << std::endl;
 }
 

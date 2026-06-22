@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 namespace go2_deploy {
@@ -135,6 +137,7 @@ RobotState Go2OnnxController::read_robot_state() const {
 void Go2OnnxController::reset_fault_history() {
     fault_history_.reset();
     last_fault_log_sec_ = -1.0;
+    last_scenario_log_sec_ = -1.0;
 }
 
 void Go2OnnxController::update_fault_diagnosis(const std::vector<float>& proprio) {
@@ -176,7 +179,8 @@ void Go2OnnxController::apply_fixstand(unitree_go::msg::dds_::LowCmd_& cmd, doub
 }
 
 void Go2OnnxController::apply_velocity(unitree_go::msg::dds_::LowCmd_& cmd) {
-    scenario_.activate_if_due(now_sec());
+    const double loop_t0 = now_sec();
+    scenario_.activate_if_due(loop_t0);
 
     const RobotState state = read_robot_state();
     const auto obs = obs_builder_.build(state, last_actions_);
@@ -204,6 +208,15 @@ void Go2OnnxController::apply_velocity(unitree_go::msg::dds_::LowCmd_& cmd) {
         motor.q() = targets[sim_idx];
         motor.dq() = 0.f;
         motor.tau() = 0.f;
+    }
+
+    const double loop_elapsed = now_sec() - loop_t0;
+    if (last_scenario_log_sec_ < 0.0 || loop_t0 - last_scenario_log_sec_ >= 1.0) {
+        const ScenarioStatus scenario_status = scenario_.status(deploy_params_.joint_names);
+        std::cout << "[run_fault_scenarios] scenario=" << scenario_type_name(scenario_.config().type)
+                  << "  phase=" << scenario_status.phase << "  loop=" << std::fixed << std::setprecision(5)
+                  << loop_elapsed << "s" << scenario_status.info << std::endl;
+        last_scenario_log_sec_ = loop_t0;
     }
 }
 

@@ -34,6 +34,61 @@ DEFAULT_JOINT_NAMES = [
 DEFAULT_JOINT_IDS_MAP = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
 
 
+def _ensure_package(name: str) -> None:
+    import types
+
+    if name not in sys.modules:
+        sys.modules[name] = types.ModuleType(name)
+
+
+def _import_module_from_path(full_name: str, file_path: Path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(full_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {full_name} from {file_path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[full_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def load_go2_configs(unitree_gym_root: Path):
+    """Load GO2RoughCfg without importing legged_gym.envs (which pulls in Isaac Gym)."""
+    rl_gym = unitree_gym_root / "unitree_rl_gym"
+    base_dir = rl_gym / "legged_gym/envs/base"
+    go2_dir = rl_gym / "legged_gym/envs/go2"
+    for rel in (
+        "legged_gym/envs/base/base_config.py",
+        "legged_gym/envs/base/legged_robot_config.py",
+        "legged_gym/envs/go2/go2_config.py",
+    ):
+        if not (rl_gym / rel).is_file():
+            raise FileNotFoundError(
+                f"Missing {rel} under {unitree_gym_root}. "
+                "Set --unitree_gym_root to your unitree_legged_gym checkout."
+            )
+
+    for pkg in (
+        "legged_gym",
+        "legged_gym.envs",
+        "legged_gym.envs.base",
+        "legged_gym.envs.go2",
+    ):
+        _ensure_package(pkg)
+
+    _import_module_from_path("legged_gym.envs.base.base_config", base_dir / "base_config.py")
+    _import_module_from_path(
+        "legged_gym.envs.base.legged_robot_config",
+        base_dir / "legged_robot_config.py",
+    )
+    go2_config = _import_module_from_path(
+        "legged_gym.envs.go2.go2_config",
+        go2_dir / "go2_config.py",
+    )
+    return go2_config.GO2RoughCfg, go2_config.GO2RoughCfgPPO
+
+
 def class_to_dict(obj: Any) -> Any:
     if not hasattr(obj, "__dict__"):
         return obj
@@ -57,7 +112,7 @@ def load_actor_critic(checkpoint: Path, unitree_gym_root: Path, task: str, devic
     if task != "go2":
         raise RuntimeError(f"Unsupported task {task}")
 
-    from legged_gym.envs.go2.go2_config import GO2RoughCfg, GO2RoughCfgPPO
+    GO2RoughCfg, GO2RoughCfgPPO = load_go2_configs(unitree_gym_root)
 
     env_cfg = GO2RoughCfg()
     train_cfg = GO2RoughCfgPPO()
@@ -315,6 +370,14 @@ def export_fault_predictor_onnx(model: torch.nn.Module, out_path: Path, opset: i
     print(f"Exported fault predictor ONNX: {out_path}")
 
 
+def default_policy_output_dir(checkpoint: Path, policies_dir: Path) -> Path:
+    """Use policies/<training_log_folder>/ where the folder is the checkpoint's parent."""
+    run_name = checkpoint.expanduser().resolve().parent.name
+    if not run_name:
+        raise ValueError(f"Cannot infer run name from checkpoint path: {checkpoint}")
+    return policies_dir.expanduser() / run_name
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -326,8 +389,17 @@ def main() -> None:
     parser.add_argument(
         "--output_dir",
         type=Path,
-        required=True,
-        help="Policy bundle directory (will create exported/ and params/).",
+        default=None,
+        help=(
+            "Policy bundle directory (creates exported/ and params/). "
+            "Default: policies/<checkpoint_parent_folder_name>."
+        ),
+    )
+    parser.add_argument(
+        "--policies_dir",
+        type=Path,
+        default=Path("policies"),
+        help="Root folder for auto-generated --output_dir (default: policies).",
     )
     parser.add_argument(
         "--unitree_gym_root",
@@ -362,8 +434,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    checkpoint = args.checkpoint.expanduser()
+    if args.output_dir is None:
+        output_dir = default_policy_output_dir(checkpoint, args.policies_dir)
+        print(f"Using output_dir: {output_dir}")
+    else:
+        output_dir = args.output_dir.expanduser()
+
     model, env_cfg, train_cfg, policy_cfg = load_actor_critic(
-        args.checkpoint.expanduser(),
+        checkpoint,
         args.unitree_gym_root.expanduser(),
         args.task,
         args.device,
@@ -377,7 +456,6 @@ def main() -> None:
         )
 
     num_obs = int(env_cfg.env.num_observations)
-    output_dir = args.output_dir.expanduser()
     exported_dir = output_dir / "exported"
     params_dir = output_dir / "params"
     params_dir.mkdir(parents=True, exist_ok=True)
@@ -400,7 +478,7 @@ def main() -> None:
         yaml.safe_dump(deploy, f, sort_keys=False)
 
     meta = {
-        "checkpoint": str(args.checkpoint.expanduser()),
+        "checkpoint": str(checkpoint),
         "onnx": str(onnx_path),
         "fault_predictor_onnx": str(fault_onnx_path) if fault_onnx_path.exists() else None,
         "deploy_yaml": str(deploy_path),

@@ -13,4 +13,4 @@ FSM:
     ]
   Velocity:
     # Path relative to this config file, or absolute.
-    policy_dir: ../../../../policies/fault_predictor_20260616
+    policy_dir: ../../../../policies/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware
