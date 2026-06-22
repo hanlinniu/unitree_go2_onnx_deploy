@@ -95,6 +95,25 @@ class ActorOnnxWrapper(torch.nn.Module):
         return self.actor(observations)
 
 
+class FaultPredictorOnnxWrapper(torch.nn.Module):
+    """Export fault encoder + diagnosis heads for C++ deploy diagnostics."""
+
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        self.fault_encoder = model.fault_encoder
+        self.fault_joint_head = model.fault_joint_head
+        self.fault_severity_head = model.fault_severity_head
+        self.fault_lock_head = model.fault_lock_head
+
+    def forward(self, fault_obs_history: torch.Tensor):
+        latent = self.fault_encoder(fault_obs_history)
+        failed_joint_logits = self.fault_joint_head(latent)
+        failed_joint_prob = torch.softmax(failed_joint_logits, dim=-1)
+        severity = torch.sigmoid(self.fault_severity_head(latent))
+        locked_joint_prob = torch.sigmoid(self.fault_lock_head(latent))
+        return failed_joint_prob, severity, locked_joint_prob
+
+
 def build_deploy_yaml(
     env_cfg,
     policy_cfg,
@@ -269,6 +288,33 @@ def export_onnx(actor: torch.nn.Module, out_path: Path, num_obs: int, opset: int
     _run_torch_onnx_export(wrapper, dummy, out_path, opset, dynamic_batch=True)
 
 
+def export_fault_predictor_onnx(model: torch.nn.Module, out_path: Path, opset: int) -> None:
+    if not hasattr(model, "fault_encoder"):
+        return
+
+    opset = resolve_onnx_opset(opset)
+    fault_obs_dim = int(model.fault_observation_dim)
+    wrapper = FaultPredictorOnnxWrapper(model).cpu().eval()
+    dummy = torch.zeros(1, fault_obs_dim, dtype=torch.float32)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.onnx.export(
+        wrapper,
+        dummy,
+        str(out_path),
+        input_names=["fault_obs_history"],
+        output_names=["failed_joint_prob", "severity", "locked_joint_prob"],
+        dynamic_axes={
+            "fault_obs_history": {0: "batch"},
+            "failed_joint_prob": {0: "batch"},
+            "severity": {0: "batch"},
+            "locked_joint_prob": {0: "batch"},
+        },
+        opset_version=opset,
+        do_constant_folding=True,
+    )
+    print(f"Exported fault predictor ONNX: {out_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -339,6 +385,9 @@ def main() -> None:
     onnx_path = exported_dir / "policy.onnx"
     export_onnx(model.actor, onnx_path, num_obs, args.opset)
 
+    fault_onnx_path = exported_dir / "fault_predictor.onnx"
+    export_fault_predictor_onnx(model, fault_onnx_path, args.opset)
+
     deploy = build_deploy_yaml(
         env_cfg,
         policy_cfg,
@@ -353,9 +402,12 @@ def main() -> None:
     meta = {
         "checkpoint": str(args.checkpoint.expanduser()),
         "onnx": str(onnx_path),
+        "fault_predictor_onnx": str(fault_onnx_path) if fault_onnx_path.exists() else None,
         "deploy_yaml": str(deploy_path),
         "num_observations": num_obs,
         "num_actions": int(env_cfg.env.num_actions),
+        "fault_history_len": int(policy_cfg.get("fault_history_len", 1)),
+        "fault_observation_dim": int(getattr(model, "fault_observation_dim", num_obs)),
         "policy_class": train_cfg.runner.policy_class_name,
     }
     with (output_dir / "export_meta.json").open("w", encoding="utf-8") as f:

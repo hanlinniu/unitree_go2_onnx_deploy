@@ -97,6 +97,8 @@ set(GO2_DEPLOY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/scenario_config.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/fault_scenario.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/command_config.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/fault_history.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/onnx_fault_predictor.cpp
 )
 
 add_library(go2_deploy_lib ${GO2_DEPLOY_SOURCES})

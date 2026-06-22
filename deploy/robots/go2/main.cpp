@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -104,6 +105,7 @@ int main(int argc, char** argv) {
     const auto policy_dir = resolve_policy_dir(config_dir, config["FSM"]["Velocity"]["policy_dir"].as<std::string>());
     const auto deploy_yaml = policy_dir / "params" / "deploy.yaml";
     const auto onnx_model = policy_dir / "exported" / "policy.onnx";
+    const auto fault_onnx_model = policy_dir / "exported" / "fault_predictor.onnx";
 
     if (!std::filesystem::exists(deploy_yaml)) {
         std::cerr << "Missing deploy.yaml: " << deploy_yaml << "\n";
@@ -144,6 +146,15 @@ int main(int argc, char** argv) {
     }
     go2_deploy::print_command_config(command_config);
 
+    std::optional<std::string> fault_predictor_path;
+    if (std::filesystem::exists(fault_onnx_model)) {
+        fault_predictor_path = fault_onnx_model.string();
+    } else {
+        std::cout << "No fault_predictor.onnx found; fault diagnostics disabled." << std::endl;
+        std::cout << "Re-export from model_30000.pt with scripts/export_onnx_from_checkpoint.py"
+                  << std::endl;
+    }
+
     go2_deploy::Go2LowLevel lowlevel;
     lowlevel.init(vm["network"].as<std::string>());
     std::cout << "Waiting for robot connection..." << std::endl;
@@ -162,7 +173,8 @@ int main(int argc, char** argv) {
         onnx_model.string(),
         config["FSM"],
         scenario_config,
-        command_config);
+        command_config,
+        fault_predictor_path);
     controller.start();
 
     std::cout << "Controls:\n"

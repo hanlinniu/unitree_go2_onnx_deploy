@@ -85,6 +85,23 @@ DeployParams load_deploy_params(const std::string& deploy_yaml_path) {
     if (static_cast<int>(params.policy_damping.size()) != params.num_actions) {
         throw std::runtime_error("policy_damping size mismatch");
     }
+
+    if (root["fault_history_len"]) {
+        params.fault_history_len = root["fault_history_len"].as<int>();
+    }
+    if (root["joint_names"] && root["joint_names"].IsSequence()) {
+        for (const auto& item : root["joint_names"]) {
+            params.joint_names.push_back(item.as<std::string>());
+        }
+    }
+    if (params.joint_names.empty()) {
+        params.joint_names = {
+            "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
+            "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
+            "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint",
+            "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
+        };
+    }
     return params;
 }
 

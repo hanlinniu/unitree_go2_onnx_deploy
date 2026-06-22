@@ -20,6 +20,8 @@ struct DeployParams {
     std::vector<float> policy_stiffness;
     std::vector<float> policy_damping;
     std::vector<int> joint_ids_map;
+    int fault_history_len = 10;
+    std::vector<std::string> joint_names;
 };
 
 DeployParams load_deploy_params(const std::string& deploy_yaml_path);

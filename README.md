@@ -24,9 +24,21 @@ Training repo path (default): `~/unitree_legged_gym`
 
 ## 1. Export policy from checkpoint
 
+Export both the walking actor (`policy.onnx`) and fault diagnosis stack (`fault_predictor.onnx`) from a `model_*.pt` checkpoint:
+
 ```bash
 cd ~/unitree_go2_onnx_deploy
 
+python3 scripts/export_onnx_from_checkpoint.py \
+  --checkpoint ~/unitree_legged_gym/unitree_rl_gym/logs/unitree_legged_gym/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware/model_30000.pt \
+  --output_dir policies/fault_predictor_20260616 \
+  --policy_kp 40 \
+  --policy_kd 1
+```
+
+Or from any other training run:
+
+```bash
 python3 scripts/export_onnx_from_checkpoint.py \
   --checkpoint ~/unitree_legged_gym/unitree_rl_gym/logs/rough_go2/<your_run>/model_30000.pt \
   --output_dir policies/my_run \
@@ -39,11 +51,12 @@ This creates:
 ```
 policies/my_run/
   exported/policy.onnx
+  exported/fault_predictor.onnx
   params/deploy.yaml
   export_meta.json
 ```
 
-**Note:** Export supports `fault_belief_in_actor=False` (standard GO2 fault-world-model config). The actor is proprio-only (45→12); fault encoder is not required for walking.
+**Note:** Export supports `fault_belief_in_actor=False` (standard GO2 fault-world-model config). The actor is proprio-only (45→12). The fault predictor runs in parallel for onboard diagnostics/logging (same role as Kaixin `fault_explanation()`); it does not change actor actions with this training config.
 
 Update `deploy/robots/go2/config/config.yaml`:
 
@@ -223,10 +236,10 @@ Re-export with `--policy_kp` / `--policy_kd` if you change training/deploy gains
 |--|----------------------|-----------|
 | Inference | TorchScript / CUDA | ONNX Runtime C++ |
 | Middleware | ROS2 | unitree_sdk2 DDS |
-| Fault diagnostics | `fault_explanation()` | Not included (actor-only export) |
+| Fault diagnostics | `fault_explanation()` | `fault_predictor.onnx` + throttled `[fault_predictor]` logs |
 | Warm-up | 3 dummy GPU runs | 3 dummy ORT runs on Velocity enter |
 
-To add fault-head ONNX export later, extend `scripts/export_onnx_from_checkpoint.py` with a second model that takes 450-dim history.
+To add world-model dynamics prediction later, export `dynamics_head` as a separate ONNX model.
 
 ## License
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -9,9 +11,11 @@
 
 #include "go2_deploy/command_config.hpp"
 #include "go2_deploy/deploy_params.hpp"
+#include "go2_deploy/fault_history.hpp"
 #include "go2_deploy/fault_scenario.hpp"
 #include "go2_deploy/go2_lowlevel.hpp"
 #include "go2_deploy/go2_observation.hpp"
+#include "go2_deploy/onnx_fault_predictor.hpp"
 #include "go2_deploy/onnx_policy.hpp"
 
 namespace go2_deploy {
@@ -31,7 +35,8 @@ public:
         const std::string& onnx_path,
         const YAML::Node& fsm_config,
         ScenarioConfig scenario_config,
-        CommandConfig command_config);
+        CommandConfig command_config,
+        const std::optional<std::string>& fault_predictor_path = std::nullopt);
 
     void start();
     void stop();
@@ -46,10 +51,14 @@ private:
     void apply_fixstand(unitree_go::msg::dds_::LowCmd_& cmd, double elapsed_sec);
     void apply_velocity(unitree_go::msg::dds_::LowCmd_& cmd);
     RobotState read_robot_state() const;
+    void reset_fault_history();
+    void update_fault_diagnosis(const std::vector<float>& proprio);
 
     Go2LowLevel& lowlevel_;
     DeployParams deploy_params_;
     OnnxPolicy policy_;
+    std::unique_ptr<OnnxFaultPredictor> fault_predictor_;
+    ProprioHistoryBuffer fault_history_;
     ObservationBuilder obs_builder_;
     YAML::Node fsm_config_;
     FaultScenario scenario_;
@@ -67,6 +76,7 @@ private:
     std::vector<std::vector<float>> fixstand_qs_;
     std::vector<float> fixstand_kp_;
     std::vector<float> fixstand_kd_;
+    double last_fault_log_sec_{-1.0};
 };
 
 }  // namespace go2_deploy

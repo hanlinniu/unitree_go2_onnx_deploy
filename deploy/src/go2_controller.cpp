@@ -47,15 +47,25 @@ Go2OnnxController::Go2OnnxController(
     const std::string& onnx_path,
     const YAML::Node& fsm_config,
     ScenarioConfig scenario_config,
-    CommandConfig command_config)
+    CommandConfig command_config,
+    const std::optional<std::string>& fault_predictor_path)
     : lowlevel_(lowlevel),
       deploy_params_(deploy_params),
       policy_(onnx_path),
+      fault_history_(deploy_params.fault_history_len, deploy_params.num_observations),
       obs_builder_(deploy_params),
       fsm_config_(fsm_config),
       scenario_(std::move(scenario_config)),
       command_config_(std::move(command_config)),
       last_actions_(deploy_params.num_actions, 0.f) {
+    if (fault_predictor_path.has_value()) {
+        fault_predictor_ = std::make_unique<OnnxFaultPredictor>(fault_predictor_path.value());
+        const int expected_dim = deploy_params.fault_history_len * deploy_params.num_observations;
+        if (fault_predictor_->fault_observation_dim() != expected_dim) {
+            throw std::runtime_error("fault_predictor ONNX input dim mismatch with deploy.yaml");
+        }
+        std::cout << "Loaded fault predictor ONNX: " << fault_predictor_path.value() << std::endl;
+    }
     const auto fixstand = fsm_config["FixStand"];
     fixstand_ts_ = fixstand["ts"].as<std::vector<float>>();
     fixstand_qs_ = fixstand["qs"].as<std::vector<std::vector<float>>>();
@@ -122,6 +132,25 @@ RobotState Go2OnnxController::read_robot_state() const {
     return state;
 }
 
+void Go2OnnxController::reset_fault_history() {
+    fault_history_.reset();
+    last_fault_log_sec_ = -1.0;
+}
+
+void Go2OnnxController::update_fault_diagnosis(const std::vector<float>& proprio) {
+    if (!fault_predictor_) {
+        return;
+    }
+
+    fault_history_.push(proprio);
+    const auto diagnosis = fault_predictor_->infer(fault_history_.flatten());
+    const double now = now_sec();
+    if (last_fault_log_sec_ < 0.0 || now - last_fault_log_sec_ >= 1.0) {
+        print_fault_diagnosis(diagnosis, deploy_params_.joint_names);
+        last_fault_log_sec_ = now;
+    }
+}
+
 void Go2OnnxController::apply_passive(unitree_go::msg::dds_::LowCmd_& cmd, float kd) const {
     for (int i = 0; i < 20; ++i) {
         auto& motor = cmd.motor_cmd()[i];
@@ -151,6 +180,7 @@ void Go2OnnxController::apply_velocity(unitree_go::msg::dds_::LowCmd_& cmd) {
 
     const RobotState state = read_robot_state();
     const auto obs = obs_builder_.build(state, last_actions_);
+    update_fault_diagnosis(obs);
     auto actions = policy_.infer(obs);
     actions = clip_actions(actions, deploy_params_.clip_actions);
     last_actions_ = actions;
@@ -189,6 +219,7 @@ void Go2OnnxController::control_loop() {
             if (mode_.load() == ControlMode::FixStand) {
                 fixstand_ready_.store(false);
                 scenario_.clear();
+                reset_fault_history();
                 fixstand_t0_ = now_sec();
                 const auto low_state = lowlevel_.get_low_state();
                 fixstand_qs_.front().clear();
@@ -199,6 +230,7 @@ void Go2OnnxController::control_loop() {
             }
             if (mode_.load() == ControlMode::Velocity) {
                 std::fill(last_actions_.begin(), last_actions_.end(), 0.f);
+                reset_fault_history();
                 for (int i = 0; i < 3; ++i) {
                     policy_.infer(std::vector<float>(deploy_params_.num_observations, 0.f));
                 }
@@ -207,6 +239,7 @@ void Go2OnnxController::control_loop() {
             if (mode_.load() == ControlMode::Sport) {
                 fixstand_ready_.store(false);
                 scenario_.clear();
+                reset_fault_history();
             }
         }
 
