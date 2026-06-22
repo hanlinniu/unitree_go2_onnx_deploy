@@ -9,7 +9,7 @@ Inspired by [unitree_cpp_deploy](https://github.com/wty-yy/unitree_cpp_deploy): 
 - Export `model_*.pt` → `policy.onnx` + `params/deploy.yaml`
 - 45-dim proprio observation (matches Isaac Gym / Kaixin ROS2 deploy)
 - Sim joint order internally (FL, FR, RL, RR); remaps to Unitree motor order on `LowCmd`
-- FSM: **Passive** → **FixStand** (L2+A) → **Velocity** (Start)
+- FSM: **Sport** → **FixStand** (R1) → **Velocity** (Y) → back to **Sport** (R2)
 - ONNX Runtime inference in a real-time thread (default 50 Hz)
 
 ## Requirements
@@ -79,13 +79,108 @@ cmake .. -DONNXRUNTIME_ROOT=../../thirdparty/onnxruntime-linux-aarch64-gpu-1.16.
 Keep Unitree **sport_mode** enabled at startup. The deploy binary starts in sport mode and only takes low-level control after **R1**.
 
 ```bash
-cd deploy/robots/go2/build
-./go2_onnx_ctrl -n eth0 \
-  --scenario random_fault --healthy_s 3.0 --fault_sthres 0.4 --fault_calf RR \
-  --command_source fixed --vx 0.4 --vy 0.0
+cd ~/unitree_go2_onnx_deploy/deploy/robots/go2/build
 ```
 
-Scenario args match the Kaixin Python deploy:
+### Gamepad workflow
+
+1. Start `./go2_onnx_ctrl` (robot stays in sport mode).
+2. **R1** — disable sport mode, run FixStand (~2 s).
+3. **Y** — start ONNX policy (scenario countdown begins here).
+4. After `--healthy_s` seconds, the fault or lock activates on the chosen calf.
+5. **R2** — stop custom control and return to sport mode (BalanceStand).
+
+| Input | Mode |
+|-------|------|
+| **R1** | Disable sport mode → FixStand |
+| **Y** | ONNX policy (after FixStand completes) |
+| **R2** | Stop custom control → re-enable sport mode (BalanceStand) |
+
+### Calf failure (`random_fault`)
+
+Weakens PD gains on one calf joint after `--healthy_s` seconds. Use `--fault_sthres` as the gain scale (e.g. `0.4` = 40% of normal Kp/Kd).
+
+**Random calf, fixed forward command:**
+
+```bash
+./go2_onnx_ctrl -n eth0 \
+  --scenario random_fault \
+  --healthy_s 3.0 \
+  --fault_sthres 0.4 \
+  --fault_calf RANDOM \
+  --command_source fixed \
+  --vx 0.4 \
+  --vy 0.0
+```
+
+**Specific leg (RR calf), joystick commands:**
+
+```bash
+./go2_onnx_ctrl -n eth0 \
+  --scenario random_fault \
+  --healthy_s 3.0 \
+  --fault_sthres 0.1 \
+  --fault_calf RR
+```
+
+**Severe fault on a random calf (10% PD gains):**
+
+```bash
+./go2_onnx_ctrl -n eth0 \
+  --scenario random_fault \
+  --healthy_s 3.0 \
+  --fault_sthres 0.1 \
+  --fault_calf RANDOM \
+  --command_source fixed \
+  --vx 0.4 \
+  --vy 0.0 \
+  --vyaw 0.0 \
+  --no_fixed_command_joystick_yaw
+```
+
+### Calf lock (`random_lock`)
+
+Forces one calf joint to `--lock_angle_deg` after `--healthy_s` seconds of healthy walking.
+
+**Random calf, lock at -120°:**
+
+```bash
+./go2_onnx_ctrl -n eth0 \
+  --scenario random_lock \
+  --healthy_s 3.0 \
+  --lock_angle_deg -120 \
+  --fault_calf RANDOM \
+  --command_source fixed \
+  --vx 0.4 \
+  --vy 0.0
+```
+
+**Specific leg (RR calf), lock at -120°:**
+
+```bash
+./go2_onnx_ctrl -n eth0 \
+  --scenario random_lock \
+  --healthy_s 3.0 \
+  --lock_angle_deg -120 \
+  --fault_calf RR \
+  --command_source fixed \
+  --vx 0.4 \
+  --vy 0.0
+```
+
+**Other legs:** set `--fault_calf` to `FL`, `FR`, `RL`, or `RR`.
+
+### Healthy baseline (no fault injection)
+
+```bash
+./go2_onnx_ctrl -n eth0 \
+  --scenario healthy \
+  --command_source fixed \
+  --vx 0.4 \
+  --vy 0.0
+```
+
+### Scenario / command arguments
 
 | Argument | Meaning |
 |----------|---------|
@@ -97,14 +192,6 @@ Scenario args match the Kaixin Python deploy:
 | `--command_source` | `joystick` (default) or `fixed` |
 | `--vx`, `--vy`, `--vyaw` | Fixed velocity commands when `--command_source fixed` |
 | `--no_fixed_command_joystick_yaw` | Also fix vyaw; default is right-stick yaw with fixed vx/vy |
-
-### Gamepad
-
-| Input | Mode |
-|-------|------|
-| **R1** | Disable sport mode → FixStand |
-| **Y** | ONNX policy (after FixStand completes) |
-| **R2** | Stop custom control → re-enable sport mode (BalanceStand) |
 
 ## Observation layout (45)
 
