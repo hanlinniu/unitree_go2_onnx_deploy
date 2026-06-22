@@ -12,5 +12,5 @@ FSM:
       [0.0, 0.67, -1.3, 0.0, 0.67, -1.3, 0.0, 0.67, -1.3, 0.0, 0.67, -1.3],
     ]
   Velocity:
-    # Path relative to this config file, or absolute.
+    # Default policy bundle (overridden by --policy on the command line).
     policy_dir: ../../../../policies/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware

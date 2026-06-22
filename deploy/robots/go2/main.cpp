@@ -29,6 +29,42 @@ std::filesystem::path resolve_policy_dir(const std::filesystem::path& config_dir
     return (config_dir / policy_dir).lexically_normal();
 }
 
+std::filesystem::path default_policies_root(const std::filesystem::path& config_dir) {
+    return (config_dir / "../../../../policies").lexically_normal();
+}
+
+std::filesystem::path resolve_selected_policy_dir(
+    const std::filesystem::path& config_dir,
+    const std::string& policy_cli,
+    const std::string& config_policy_dir_raw) {
+    if (policy_cli.empty()) {
+        return resolve_policy_dir(config_dir, config_policy_dir_raw);
+    }
+
+    const std::filesystem::path arg(policy_cli);
+    if (arg.is_absolute()) {
+        return arg.lexically_normal();
+    }
+
+    if (policy_cli.find('/') != std::string::npos || policy_cli.find('\\') != std::string::npos) {
+        return resolve_policy_dir(config_dir, policy_cli);
+    }
+
+    return (default_policies_root(config_dir) / arg).lexically_normal();
+}
+
+void print_available_policies(const std::filesystem::path& policies_root) {
+    if (!std::filesystem::is_directory(policies_root)) {
+        return;
+    }
+    std::cerr << "Available policies under " << policies_root << ":\n";
+    for (const auto& entry : std::filesystem::directory_iterator(policies_root)) {
+        if (entry.is_directory()) {
+            std::cerr << "  " << entry.path().filename().string() << "\n";
+        }
+    }
+}
+
 std::filesystem::path resolve_config_file(
     const std::filesystem::path& exe_dir,
     const std::filesystem::path& config_path) {
@@ -63,6 +99,9 @@ int main(int argc, char** argv) {
         ("help,h", "Show help")
         ("network,n", boost::program_options::value<std::string>()->default_value(""), "DDS network interface (e.g. eth0)")
         ("config,c", boost::program_options::value<std::string>()->default_value("../config/config.yaml"), "FSM config path")
+        ("policy,p", boost::program_options::value<std::string>(),
+            "Policy bundle: folder name under policies/, relative path, or absolute path. "
+            "Overrides config.yaml Velocity.policy_dir.")
         ("scenario", boost::program_options::value<std::string>()->default_value("healthy"),
             "Scenario: healthy, random_fault, random_lock (aliases: fault, lock)")
         ("healthy_s", boost::program_options::value<double>()->default_value(3.0),
@@ -102,17 +141,26 @@ int main(int argc, char** argv) {
     const auto config_dir = config_file.parent_path();
 
     YAML::Node config = YAML::LoadFile(config_file.string());
-    const auto policy_dir = resolve_policy_dir(config_dir, config["FSM"]["Velocity"]["policy_dir"].as<std::string>());
+
+    const std::string policy_cli = vm.count("policy") ? vm["policy"].as<std::string>() : std::string{};
+    const auto policy_dir = resolve_selected_policy_dir(
+        config_dir,
+        policy_cli,
+        config["FSM"]["Velocity"]["policy_dir"].as<std::string>());
     const auto deploy_yaml = policy_dir / "params" / "deploy.yaml";
     const auto onnx_model = policy_dir / "exported" / "policy.onnx";
     const auto fault_onnx_model = policy_dir / "exported" / "fault_predictor.onnx";
 
+    std::cout << "Using policy bundle: " << policy_dir << std::endl;
+
     if (!std::filesystem::exists(deploy_yaml)) {
         std::cerr << "Missing deploy.yaml: " << deploy_yaml << "\n";
+        print_available_policies(default_policies_root(config_dir));
         return 1;
     }
     if (!std::filesystem::exists(onnx_model)) {
         std::cerr << "Missing policy.onnx: " << onnx_model << "\n";
+        print_available_policies(default_policies_root(config_dir));
         return 1;
     }
 

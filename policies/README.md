@@ -7,4 +7,5 @@
 #   params/deploy.yaml
 #   export_meta.json
 #
-# Point deploy/robots/go2/config/config.yaml -> Velocity.policy_dir to this folder.
+# Point deploy/robots/go2/config/config.yaml -> Velocity.policy_dir to this folder,
+# or pass --policy <folder_name> at runtime (recommended when you have multiple policies).

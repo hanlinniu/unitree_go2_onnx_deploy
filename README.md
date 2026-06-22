@@ -52,7 +52,15 @@ policies/20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10step
 
 **Note:** Export supports `fault_belief_in_actor=False` (standard GO2 fault-world-model config). The actor is proprio-only (45→12). The fault predictor runs in parallel for onboard diagnostics/logging (same role as Kaixin `fault_explanation()`); it does not change actor actions with this training config.
 
-Update `deploy/robots/go2/config/config.yaml`:
+At deploy time, pass `--policy <folder_name>` to pick a bundle under `policies/` (overrides `config.yaml`). Example folder names:
+
+```
+policies/20260616_after8000_...-alienware/
+policies/20260622_after8000_..._kp25kd0.5-alienware/
+policies/20260622_after8000_..._kp25kd0.6-raico/
+```
+
+Optional default in `deploy/robots/go2/config/config.yaml` (used when `--policy` is omitted):
 
 ```yaml
 Velocity:
@@ -89,6 +97,22 @@ Keep Unitree **sport_mode** enabled at startup. The deploy binary starts in spor
 cd ~/unitree_go2_onnx_deploy/deploy/robots/go2/build
 ```
 
+### Select policy
+
+Use `--policy` (or `-p`) with the **folder name** under `policies/` (export auto-names this from the training log folder):
+
+```bash
+./go2_onnx_ctrl -n eth0 \
+  --policy 20260622_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor_kp25kd0.6-raico \
+  --scenario healthy \
+  --command_source fixed \
+  --vx 0.4
+```
+
+You can also pass a relative path (`../../../../policies/my_run`) or an absolute path. If `--policy` is omitted, `Velocity.policy_dir` in `config.yaml` is used.
+
+On startup the binary prints `Using policy bundle: ...`. If the folder is wrong, it lists available policy names.
+
 ### Gamepad workflow
 
 1. Start `./go2_onnx_ctrl` (robot stays in sport mode).
@@ -111,6 +135,7 @@ Weakens PD gains on one calf joint after `--healthy_s` seconds. Use `--fault_sth
 
 ```bash
 ./go2_onnx_ctrl -n eth0 \
+  --policy 20260616_after8000_30000iteration_samethigh0.8_onestepworldmodel_10stephistoryfourthmlp_independentfaultpredictor-alienware \
   --scenario random_fault \
   --healthy_s 3.0 \
   --fault_sthres 0.4 \
@@ -156,7 +181,7 @@ Calf motor failure active: FR_calf_joint (sim_idx=5) PD gain scale alpha=0.1
 [world_model] predicted_failed=FR_calf_joint p=0.62 strength=0.31 predicted_locked=FR_calf_joint p=0.08 healthy_prob=0.18
 ```
 
-Requires `exported/fault_predictor.onnx` in the policy bundle (`Velocity.policy_dir` in `config.yaml`). If missing, you will see `No fault_predictor.onnx found; fault diagnostics disabled.`
+Requires `exported/fault_predictor.onnx` in the selected policy bundle. If missing, you will see `No fault_predictor.onnx found; fault diagnostics disabled.`
 
 ### Calf lock (`random_lock`)
 
@@ -204,6 +229,7 @@ Forces one calf joint to `--lock_angle_deg` after `--healthy_s` seconds of healt
 
 | Argument | Meaning |
 |----------|---------|
+| `--policy`, `-p` | Policy folder under `policies/`, or path. Overrides `config.yaml` default |
 | `--scenario` | `healthy`, `random_fault`, or `random_lock` (aliases: `fault`, `lock`) |
 | `--healthy_s` | Seconds of normal policy before fault/lock activates |
 | `--fault_sthres` | PD gain scale on failed calf (`random_fault`) |
