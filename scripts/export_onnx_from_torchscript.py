@@ -14,7 +14,6 @@ import yaml
 from export_onnx_from_checkpoint import (
     DEFAULT_JOINT_IDS_MAP,
     DEFAULT_JOINT_NAMES,
-    ActorOnnxWrapper,
     export_onnx,
 )
 
@@ -55,21 +54,8 @@ def default_deploy_yaml(policy_kp: float, policy_kd: float, clip_actions: float)
     }
 
 
-class TorchScriptActorWrapper(nn.Module):
-    """Export actor-only inference from a TorchScript bundle."""
-
-    def __init__(self, module: torch.jit.ScriptModule):
-        super().__init__()
-        self.module = module
-
-    def forward(self, observations: torch.Tensor) -> torch.Tensor:
-        if hasattr(self.module, "act_inference"):
-            return self.module.act_inference(observations)
-        return self.module(observations)
-
-
 def resolve_actor_module(ts: torch.jit.ScriptModule) -> nn.Module:
-    """Prefer standalone actor (stateless). Fall back to act_inference wrapper."""
+    """Prefer standalone actor (stateless). Fall back to full TorchScript policy."""
     if hasattr(ts, "actor"):
         actor = ts.actor
         dummy = torch.zeros(1, NUM_OBS)
@@ -79,10 +65,10 @@ def resolve_actor_module(ts: torch.jit.ScriptModule) -> nn.Module:
             print("Using TorchScript submodule: actor (proprio-only, recommended for ONNX)")
             return actor
     print(
-        "Warning: exporting via act_inference (may include world-model side effects). "
+        "Warning: exporting full TorchScript policy (may include world-model side effects). "
         "Prefer exporting from raw model_*.pt checkpoint when possible."
     )
-    return TorchScriptActorWrapper(ts)
+    return ts
 
 
 def main() -> None:

@@ -172,24 +172,101 @@ def resolve_onnx_opset(requested: int) -> int:
     return opset
 
 
-def export_onnx(actor: torch.nn.Module, out_path: Path, num_obs: int, opset: int) -> None:
-    opset = resolve_onnx_opset(opset)
-    wrapper = ActorOnnxWrapper(actor).cpu().eval()
+def is_torchscript_module(module: torch.nn.Module) -> bool:
+    if isinstance(module, torch.jit.ScriptModule):
+        return True
+    return type(module).__name__ in {"RecursiveScriptModule", "ScriptModule", "TopLevelTracedModule"}
+
+
+def clone_script_sequential_to_eager(
+    script_module: torch.nn.Module, num_obs: int
+) -> torch.nn.Sequential:
+    """Rebuild a scripted nn.Sequential actor as an eager module for ONNX tracing."""
+    state = script_module.state_dict()
+    linear_indices = sorted(
+        int(key.split(".", 1)[0])
+        for key in state
+        if key.endswith(".weight") and key.count(".") == 1
+    )
+    if not linear_indices:
+        raise RuntimeError("Could not infer Linear layers from TorchScript state_dict")
+
+    activations = (torch.nn.ELU, torch.nn.ReLU, torch.nn.Tanh, torch.nn.LeakyReLU)
     dummy = torch.zeros(1, num_obs, dtype=torch.float32)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.onnx.export(
-        wrapper,
-        dummy,
-        str(out_path),
-        input_names=["observations"],
-        output_names=["actions"],
-        dynamic_axes={
+    with torch.no_grad():
+        reference = script_module(dummy)
+
+    def build_model(act: type) -> torch.nn.Sequential:
+        layers: list[torch.nn.Module] = []
+        for i, idx in enumerate(linear_indices):
+            weight = state[f"{idx}.weight"]
+            layers.append(
+                torch.nn.Linear(
+                    int(weight.shape[1]),
+                    int(weight.shape[0]),
+                    bias=f"{idx}.bias" in state,
+                )
+            )
+            if i + 1 < len(linear_indices):
+                layers.append(act())
+        model = torch.nn.Sequential(*layers)
+        model.load_state_dict(state, strict=True)
+        return model
+
+    for act in activations:
+        model = build_model(act)
+        model.eval()
+        with torch.no_grad():
+            candidate = model(dummy)
+        if torch.allclose(reference, candidate, atol=1e-5, rtol=1e-5):
+            print(
+                "Rebuilt TorchScript actor as eager Sequential "
+                f"with {act.__name__} activations for ONNX export"
+            )
+            return model
+
+    raise RuntimeError("Could not rebuild TorchScript actor with known activations")
+
+
+def _run_torch_onnx_export(
+    model: torch.nn.Module,
+    dummy: torch.Tensor,
+    out_path: Path,
+    opset: int,
+    *,
+    dynamic_batch: bool,
+) -> None:
+    kwargs = {
+        "input_names": ["observations"],
+        "output_names": ["actions"],
+        "opset_version": opset,
+        "do_constant_folding": True,
+    }
+    if dynamic_batch:
+        kwargs["dynamic_axes"] = {
             "observations": {0: "batch"},
             "actions": {0: "batch"},
-        },
-        opset_version=opset,
-        do_constant_folding=True,
-    )
+        }
+    torch.onnx.export(model, dummy, str(out_path), **kwargs)
+
+
+def export_onnx(actor: torch.nn.Module, out_path: Path, num_obs: int, opset: int) -> None:
+    opset = resolve_onnx_opset(opset)
+    dummy = torch.zeros(1, num_obs, dtype=torch.float32)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if is_torchscript_module(actor):
+        script_actor = actor.cpu().eval()
+        print("Exporting TorchScript actor directly to ONNX")
+        try:
+            _run_torch_onnx_export(script_actor, dummy, out_path, opset, dynamic_batch=False)
+            return
+        except Exception as exc:
+            print(f"Direct TorchScript ONNX export failed ({exc}); rebuilding eager copy...")
+            actor = clone_script_sequential_to_eager(script_actor, num_obs)
+
+    wrapper = ActorOnnxWrapper(actor).cpu().eval()
+    _run_torch_onnx_export(wrapper, dummy, out_path, opset, dynamic_batch=True)
 
 
 def main() -> None:
