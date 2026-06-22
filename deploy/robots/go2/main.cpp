@@ -27,6 +27,28 @@ std::filesystem::path resolve_policy_dir(const std::filesystem::path& config_dir
     return (config_dir / policy_dir).lexically_normal();
 }
 
+std::filesystem::path resolve_config_file(
+    const std::filesystem::path& exe_dir,
+    const std::filesystem::path& config_path) {
+    if (config_path.is_absolute()) {
+        return config_path;
+    }
+
+    const std::filesystem::path candidates[] = {
+        exe_dir / config_path,
+        exe_dir / ".." / config_path,
+        exe_dir / "config" / "config.yaml",
+        exe_dir / ".." / "config" / "config.yaml",
+    };
+    for (const auto& candidate : candidates) {
+        std::error_code ec;
+        if (std::filesystem::exists(candidate, ec)) {
+            return std::filesystem::weakly_canonical(candidate, ec);
+        }
+    }
+    return exe_dir / config_path;
+}
+
 bool button_pressed(uint32_t keys, uint32_t last_keys, uint32_t button) {
     return (keys & button) && !(last_keys & button);
 }
@@ -38,7 +60,7 @@ int main(int argc, char** argv) {
     desc.add_options()
         ("help,h", "Show help")
         ("network,n", boost::program_options::value<std::string>()->default_value(""), "DDS network interface (e.g. eth0)")
-        ("config,c", boost::program_options::value<std::string>()->default_value("config/config.yaml"), "FSM config path")
+        ("config,c", boost::program_options::value<std::string>()->default_value("../config/config.yaml"), "FSM config path")
         ("scenario", boost::program_options::value<std::string>()->default_value("healthy"),
             "Scenario: healthy, random_fault, random_lock (aliases: fault, lock)")
         ("healthy_s", boost::program_options::value<double>()->default_value(3.0),
@@ -61,7 +83,13 @@ int main(int argc, char** argv) {
 
     const auto exe_path = std::filesystem::read_symlink("/proc/self/exe").parent_path();
     const auto config_path = std::filesystem::path(vm["config"].as<std::string>());
-    const auto config_file = config_path.is_absolute() ? config_path : exe_path / config_path;
+    const auto config_file = resolve_config_file(exe_path, config_path);
+    if (!std::filesystem::exists(config_file)) {
+        std::cerr << "Config not found: " << config_file << "\n"
+                  << "Expected deploy/robots/go2/config/config.yaml. "
+                  << "Try: -c ../config/config.yaml\n";
+        return 1;
+    }
     const auto config_dir = config_file.parent_path();
 
     YAML::Node config = YAML::LoadFile(config_file.string());
