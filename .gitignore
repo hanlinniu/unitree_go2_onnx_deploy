@@ -1,0 +1,9 @@
+deploy/robots/go2/build/
+deploy/thirdparty/onnxruntime*/
+*.onnx.data
+__pycache__/
+*.pyc
+.DS_Store
+policies/*/logs/
+*.pt
+*.pth
