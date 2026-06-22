@@ -55,14 +55,23 @@ Velocity:
 ## 2. Build C++ deploy
 
 ```bash
-# Install ONNX Runtime under deploy/thirdparty/ (see README there)
+# Install ONNX Runtime under deploy/thirdparty/ (see deploy/thirdparty/README.md)
+# Orin NX example:
+#   cd deploy/thirdparty
+#   wget .../onnxruntime-linux-aarch64-gpu-1.16.0.tar.bz2 && tar -xjf ...
 
 cd deploy/robots/go2
 mkdir -p build && cd build
+rm -rf *    # if re-configuring
 
-# Orin NX: -DONNXRUNTIME_ROOT=../../thirdparty/onnxruntime-linux-aarch64-1.23.2
-cmake .. -DONNXRUNTIME_ROOT=../../thirdparty/onnxruntime-linux-x64-1.23.2
+cmake ..    # auto-detects aarch64 (Orin) vs x64
 make -j$(nproc)
+```
+
+Optional override (path relative to `deploy/robots/go2/`, not `build/`):
+
+```bash
+cmake .. -DONNXRUNTIME_ROOT=../../thirdparty/onnxruntime-linux-aarch64-gpu-1.16.0
 ```
 
 ## 3. Run on robot
