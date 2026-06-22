@@ -45,12 +45,14 @@ Go2OnnxController::Go2OnnxController(
     Go2LowLevel& lowlevel,
     const DeployParams& deploy_params,
     const std::string& onnx_path,
-    const YAML::Node& fsm_config)
+    const YAML::Node& fsm_config,
+    ScenarioConfig scenario_config)
     : lowlevel_(lowlevel),
       deploy_params_(deploy_params),
       policy_(onnx_path),
       obs_builder_(deploy_params),
       fsm_config_(fsm_config),
+      scenario_(std::move(scenario_config)),
       last_actions_(deploy_params.num_actions, 0.f) {
     const auto fixstand = fsm_config["FixStand"];
     fixstand_ts_ = fixstand["ts"].as<std::vector<float>>();
@@ -135,19 +137,30 @@ void Go2OnnxController::apply_fixstand(unitree_go::msg::dds_::LowCmd_& cmd, doub
 }
 
 void Go2OnnxController::apply_velocity(unitree_go::msg::dds_::LowCmd_& cmd) {
+    scenario_.activate_if_due(now_sec());
+
     const RobotState state = read_robot_state();
     const auto obs = obs_builder_.build(state, last_actions_);
     auto actions = policy_.infer(obs);
     actions = clip_actions(actions, deploy_params_.clip_actions);
     last_actions_ = actions;
-    const auto targets = actions_to_joint_targets(actions, deploy_params_);
+    auto targets = actions_to_joint_targets(actions, deploy_params_);
+    scenario_.apply_lock_target(targets);
 
     for (int sim_idx = 0; sim_idx < deploy_params_.num_actions; ++sim_idx) {
         const int motor_idx = deploy_params_.joint_ids_map[sim_idx];
         auto& motor = cmd.motor_cmd()[motor_idx];
         motor.mode() = 0x01;
-        motor.kp() = deploy_params_.policy_stiffness[sim_idx];
-        motor.kd() = deploy_params_.policy_damping[sim_idx];
+        float kp = 0.f;
+        float kd = 0.f;
+        scenario_.scale_motor_gains(
+            sim_idx,
+            deploy_params_.policy_stiffness[sim_idx],
+            deploy_params_.policy_damping[sim_idx],
+            kp,
+            kd);
+        motor.kp() = kp;
+        motor.kd() = kd;
         motor.q() = targets[sim_idx];
         motor.dq() = 0.f;
         motor.tau() = 0.f;
@@ -164,6 +177,8 @@ void Go2OnnxController::control_loop() {
         if (requested != mode_.load()) {
             mode_.store(requested);
             if (mode_.load() == ControlMode::FixStand) {
+                fixstand_ready_.store(false);
+                scenario_.clear();
                 fixstand_t0_ = now_sec();
                 const auto low_state = lowlevel_.get_low_state();
                 fixstand_qs_.front().clear();
@@ -177,7 +192,18 @@ void Go2OnnxController::control_loop() {
                 for (int i = 0; i < 3; ++i) {
                     policy_.infer(std::vector<float>(deploy_params_.num_observations, 0.f));
                 }
+                scenario_.arm(now_sec());
             }
+            if (mode_.load() == ControlMode::Sport) {
+                fixstand_ready_.store(false);
+                scenario_.clear();
+            }
+        }
+
+        if (mode_.load() == ControlMode::Sport) {
+            std::this_thread::sleep_until(next_tick);
+            next_tick += dt;
+            continue;
         }
 
         unitree_go::msg::dds_::LowCmd_ cmd{};
@@ -189,9 +215,14 @@ void Go2OnnxController::control_loop() {
             case ControlMode::Passive:
                 apply_passive(cmd, fsm_config_["Passive"]["kd"].as<std::vector<float>>()[0]);
                 break;
-            case ControlMode::FixStand:
-                apply_fixstand(cmd, now_sec() - fixstand_t0_);
+            case ControlMode::FixStand: {
+                const double elapsed = now_sec() - fixstand_t0_;
+                apply_fixstand(cmd, elapsed);
+                if (!fixstand_ts_.empty() && elapsed >= fixstand_ts_.back()) {
+                    fixstand_ready_.store(true);
+                }
                 break;
+            }
             case ControlMode::Velocity:
                 apply_velocity(cmd);
                 break;

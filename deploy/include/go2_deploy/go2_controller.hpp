@@ -8,6 +8,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "go2_deploy/deploy_params.hpp"
+#include "go2_deploy/fault_scenario.hpp"
 #include "go2_deploy/go2_lowlevel.hpp"
 #include "go2_deploy/go2_observation.hpp"
 #include "go2_deploy/onnx_policy.hpp"
@@ -15,6 +16,7 @@
 namespace go2_deploy {
 
 enum class ControlMode {
+    Sport,
     Passive,
     FixStand,
     Velocity,
@@ -26,13 +28,15 @@ public:
         Go2LowLevel& lowlevel,
         const DeployParams& deploy_params,
         const std::string& onnx_path,
-        const YAML::Node& fsm_config);
+        const YAML::Node& fsm_config,
+        ScenarioConfig scenario_config);
 
     void start();
     void stop();
 
     ControlMode mode() const { return mode_.load(); }
     void request_mode(ControlMode mode) { requested_mode_.store(mode); }
+    bool fixstand_ready() const { return fixstand_ready_.load(); }
 
 private:
     void control_loop();
@@ -46,11 +50,13 @@ private:
     OnnxPolicy policy_;
     ObservationBuilder obs_builder_;
     YAML::Node fsm_config_;
+    FaultScenario scenario_;
 
     std::vector<float> last_actions_;
     std::atomic<bool> running_{false};
-    std::atomic<ControlMode> mode_{ControlMode::Passive};
-    std::atomic<ControlMode> requested_mode_{ControlMode::Passive};
+    std::atomic<ControlMode> mode_{ControlMode::Sport};
+    std::atomic<ControlMode> requested_mode_{ControlMode::Sport};
+    std::atomic<bool> fixstand_ready_{false};
     std::thread control_thread_;
 
     double fixstand_t0_ = 0.0;

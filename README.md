@@ -76,20 +76,34 @@ cmake .. -DONNXRUNTIME_ROOT=../../thirdparty/onnxruntime-linux-aarch64-gpu-1.16.
 
 ## 3. Run on robot
 
-Disable Unitree official control / `mcf` services (same as unitree_cpp_deploy).
+Keep Unitree **sport_mode** enabled at startup. The deploy binary starts in sport mode and only takes low-level control after **R1**.
 
 ```bash
 cd deploy/robots/go2/build
-./go2_onnx_ctrl -n eth0
+./go2_onnx_ctrl -n eth0 \
+  --scenario random_fault --healthy_s 3.0 --fault_sthres 0.1 --fault_calf RANDOM
+
+./go2_onnx_ctrl -n eth0 \
+  --scenario random_lock --healthy_s 3.0 --lock_angle_deg -120 --fault_calf RANDOM
 ```
+
+Scenario args match the Kaixin Python deploy:
+
+| Argument | Meaning |
+|----------|---------|
+| `--scenario` | `healthy`, `random_fault`, or `random_lock` (aliases: `fault`, `lock`) |
+| `--healthy_s` | Seconds of normal policy before fault/lock activates |
+| `--fault_sthres` | PD gain scale on failed calf (`random_fault`) |
+| `--lock_angle_deg` | Locked calf target angle in degrees (`random_lock`) |
+| `--fault_calf` | `RANDOM`, `FL`, `FR`, `RL`, or `RR` |
 
 ### Gamepad
 
 | Input | Mode |
 |-------|------|
-| **L2 + A** | FixStand (Kp 60/80/80, Kd 5/4/4) |
-| **Start** | Velocity policy (ONNX, Kp 20, Kd 0.5) |
-| **L2 + B** | Passive damping |
+| **R1** | Disable sport mode → FixStand |
+| **Y** | ONNX policy (after FixStand completes) |
+| **R2** | Stop custom control → re-enable sport mode (BalanceStand) |
 
 ## Observation layout (45)
 
