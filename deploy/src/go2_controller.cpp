@@ -46,13 +46,15 @@ Go2OnnxController::Go2OnnxController(
     const DeployParams& deploy_params,
     const std::string& onnx_path,
     const YAML::Node& fsm_config,
-    ScenarioConfig scenario_config)
+    ScenarioConfig scenario_config,
+    CommandConfig command_config)
     : lowlevel_(lowlevel),
       deploy_params_(deploy_params),
       policy_(onnx_path),
       obs_builder_(deploy_params),
       fsm_config_(fsm_config),
       scenario_(std::move(scenario_config)),
+      command_config_(std::move(command_config)),
       last_actions_(deploy_params.num_actions, 0.f) {
     const auto fixstand = fsm_config["FixStand"];
     fixstand_ts_ = fixstand["ts"].as<std::vector<float>>();
@@ -104,11 +106,19 @@ RobotState Go2OnnxController::read_robot_state() const {
     const float ly = wireless.ly();
     const float lx = -wireless.lx();
     const float rx = -wireless.rx();
-    state.command_raw = {
-        ly * deploy_params_.max_cmd[0],
-        lx * deploy_params_.max_cmd[1],
-        rx * deploy_params_.max_cmd[2],
-    };
+
+    if (command_config_.source == CommandSource::Fixed) {
+        state.command_raw = {command_config_.vx, command_config_.vy, command_config_.vyaw};
+        if (command_config_.fixed_command_joystick_yaw) {
+            state.command_raw[2] = rx * deploy_params_.max_cmd[2];
+        }
+    } else {
+        state.command_raw = {
+            ly * deploy_params_.max_cmd[0],
+            lx * deploy_params_.max_cmd[1],
+            rx * deploy_params_.max_cmd[2],
+        };
+    }
     return state;
 }
 

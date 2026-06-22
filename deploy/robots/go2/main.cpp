@@ -10,6 +10,7 @@
 #include "go2_deploy/go2_lowlevel.hpp"
 #include "go2_deploy/go2_sport.hpp"
 #include "go2_deploy/deploy_params.hpp"
+#include "go2_deploy/command_config.hpp"
 #include "go2_deploy/scenario_config.hpp"
 
 namespace {
@@ -70,7 +71,14 @@ int main(int argc, char** argv) {
         ("lock_angle_deg", boost::program_options::value<double>()->default_value(-120.0),
             "Target calf angle for random_lock")
         ("fault_calf", boost::program_options::value<std::string>()->default_value("RANDOM"),
-            "Calf leg to affect: RANDOM, FL, FR, RL, or RR");
+            "Calf leg to affect: RANDOM, FL, FR, RL, or RR")
+        ("command_source", boost::program_options::value<std::string>()->default_value("joystick"),
+            "Velocity command source: joystick or fixed")
+        ("vx", boost::program_options::value<float>()->default_value(0.5f), "Fixed forward velocity command")
+        ("vy", boost::program_options::value<float>()->default_value(0.f), "Fixed lateral velocity command")
+        ("vyaw", boost::program_options::value<float>()->default_value(0.f), "Fixed yaw velocity command")
+        ("no_fixed_command_joystick_yaw", boost::program_options::bool_switch()->default_value(false),
+            "When --command_source fixed, also fix vyaw instead of using right stick");
 
     boost::program_options::variables_map vm;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
@@ -122,6 +130,20 @@ int main(int argc, char** argv) {
     }
     go2_deploy::print_scenario_config(scenario_config);
 
+    go2_deploy::CommandConfig command_config;
+    try {
+        command_config = go2_deploy::parse_command_config(
+            vm["command_source"].as<std::string>(),
+            vm["vx"].as<float>(),
+            vm["vy"].as<float>(),
+            vm["vyaw"].as<float>(),
+            vm["no_fixed_command_joystick_yaw"].as<bool>());
+    } catch (const std::exception& ex) {
+        std::cerr << ex.what() << std::endl;
+        return 1;
+    }
+    go2_deploy::print_command_config(command_config);
+
     go2_deploy::Go2LowLevel lowlevel;
     lowlevel.init(vm["network"].as<std::string>());
     std::cout << "Waiting for robot connection..." << std::endl;
@@ -139,7 +161,8 @@ int main(int argc, char** argv) {
         deploy_params,
         onnx_model.string(),
         config["FSM"],
-        scenario_config);
+        scenario_config,
+        command_config);
     controller.start();
 
     std::cout << "Controls:\n"

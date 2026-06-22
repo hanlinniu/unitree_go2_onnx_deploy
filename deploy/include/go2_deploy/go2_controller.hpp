@@ -7,6 +7,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include "go2_deploy/command_config.hpp"
 #include "go2_deploy/deploy_params.hpp"
 #include "go2_deploy/fault_scenario.hpp"
 #include "go2_deploy/go2_lowlevel.hpp"
@@ -29,7 +30,8 @@ public:
         const DeployParams& deploy_params,
         const std::string& onnx_path,
         const YAML::Node& fsm_config,
-        ScenarioConfig scenario_config);
+        ScenarioConfig scenario_config,
+        CommandConfig command_config);
 
     void start();
     void stop();
@@ -51,6 +53,7 @@ private:
     ObservationBuilder obs_builder_;
     YAML::Node fsm_config_;
     FaultScenario scenario_;
+    CommandConfig command_config_;
 
     std::vector<float> last_actions_;
     std::atomic<bool> running_{false};

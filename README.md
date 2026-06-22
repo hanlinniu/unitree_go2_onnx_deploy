@@ -81,10 +81,8 @@ Keep Unitree **sport_mode** enabled at startup. The deploy binary starts in spor
 ```bash
 cd deploy/robots/go2/build
 ./go2_onnx_ctrl -n eth0 \
-  --scenario random_fault --healthy_s 3.0 --fault_sthres 0.1 --fault_calf RANDOM
-
-./go2_onnx_ctrl -n eth0 \
-  --scenario random_lock --healthy_s 3.0 --lock_angle_deg -120 --fault_calf RANDOM
+  --scenario random_fault --healthy_s 3.0 --fault_sthres 0.4 --fault_calf RR \
+  --command_source fixed --vx 0.4 --vy 0.0
 ```
 
 Scenario args match the Kaixin Python deploy:
@@ -96,6 +94,9 @@ Scenario args match the Kaixin Python deploy:
 | `--fault_sthres` | PD gain scale on failed calf (`random_fault`) |
 | `--lock_angle_deg` | Locked calf target angle in degrees (`random_lock`) |
 | `--fault_calf` | `RANDOM`, `FL`, `FR`, `RL`, or `RR` |
+| `--command_source` | `joystick` (default) or `fixed` |
+| `--vx`, `--vy`, `--vyaw` | Fixed velocity commands when `--command_source fixed` |
+| `--no_fixed_command_joystick_yaw` | Also fix vyaw; default is right-stick yaw with fixed vx/vy |
 
 ### Gamepad
 
@@ -118,7 +119,7 @@ Same as `legged_robot.py` / Kaixin deploy:
 | 21–32 | qdot × 0.05 |
 | 33–44 | Last actions |
 
-Commands come from the wireless controller sticks (`ly`, `-lx`, `-rx`) scaled by `max_cmd` in `deploy.yaml`.
+Commands come from the wireless controller sticks (`ly`, `-lx`, `-rx`) scaled by `max_cmd` in `deploy.yaml`, or from `--command_source fixed --vx ... --vy ...` (vyaw from right stick by default).
 
 ## PD gains
 
