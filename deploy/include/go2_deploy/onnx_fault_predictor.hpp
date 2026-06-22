@@ -17,7 +17,7 @@ class OnnxFaultPredictor {
 public:
     explicit OnnxFaultPredictor(const std::string& model_path);
 
-    FaultDiagnosis infer(const std::vector<float>& fault_obs_history) const;
+    FaultDiagnosis infer(const std::vector<float>& fault_obs_history);
 
     int fault_observation_dim() const { return fault_obs_dim_; }
     int num_joints() const { return num_joints_; }

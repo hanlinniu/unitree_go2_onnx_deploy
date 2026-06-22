@@ -51,7 +51,7 @@ OnnxFaultPredictor::OnnxFaultPredictor(const std::string& model_path)
     }
 }
 
-FaultDiagnosis OnnxFaultPredictor::infer(const std::vector<float>& fault_obs_history) const {
+FaultDiagnosis OnnxFaultPredictor::infer(const std::vector<float>& fault_obs_history) {
     if (static_cast<int>(fault_obs_history.size()) != fault_obs_dim_) {
         throw std::runtime_error("fault_obs_history size does not match ONNX model");
     }
